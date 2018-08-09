@@ -13,7 +13,6 @@ __all__ = [
     'OP',
     'BaseCondition',
     'PrimitiveCondition',
-    'CompoundKeyCondition',
     'JoinCondition',
     'AndCondition',
     'OrCondition'
@@ -139,16 +138,16 @@ class OrCondition(JoinCondition):
 
 class PrimitiveCondition(BaseCondition):
     """Primitive expression"""
-    def __init__(self, field, op, value=None):
+    def __init__(self, attr, op, value=None):
         """
-        :param field: The field attached to this expression
-        :type field: Field
+        :param attr: The field attached to this expression
+        :type attr: dynamongo.Attribute
         :param op: Comparison operator
         :param value: Value to compare against.
                     The value should be a tuple for expressions that expect more than one input parameter
                     Example is BETWEEN(low, high)
         """
-        self.field = field
+        self.attr = attr
         self.op = op
         self.value = value
 
@@ -157,12 +156,12 @@ class PrimitiveCondition(BaseCondition):
         v = self.value
 
         if op == OP.BETWEEN:
-            return '{} <= {} <= {}'.format(v[0], self.field, v[1])
+            return '{} <= {} <= {}'.format(v[0], self.attr, v[1])
 
         if OP.num_args(op) == 0:
-            return '{}({})'.format(op, self.field)
+            return '{}({})'.format(op, self.attr)
 
-        return '{} {} {}'.format(self.field, op, v)
+        return '{} {} {}'.format(self.attr, op, v)
 
     def to_boto_key(self):
         try:
@@ -176,19 +175,16 @@ class PrimitiveCondition(BaseCondition):
         return self._to_boto(Attr)
 
     def _to_boto(self, class_):
+        attr = self.attr
         fn = OP.name(self.op)
-        fn = getattr(class_(self.field.name), fn)
+        fn = getattr(class_(attr.name), fn)
 
         args = OP.num_args(self.op)
         if args == 0:
             return fn()
         if args == 1:
-            return fn(self.value)
-        return fn(*self.value)
+            value = attr.dump(self.value)
+            return fn(value)
 
-
-class CompoundKeyCondition:
-    """Accepts a list of values"""
-    # todo: extend BaseCondition
-    def __init__(self, values):
-        self.values = values
+        value = [attr.dump(x) for x in self.value]
+        return fn(*value)

@@ -48,18 +48,19 @@ setup(
     license='MIT',
     zip_safe=False,
     keywords=(
-        'serialization', 'rest', 'json', 'api', 'marshal',
-        'marshalling', 'deserialization', 'validation', 'schema',
+        'aws', 'dynamo', 'dynamodb', 'orm'
+        'serialization', 'deserialization', 'validation'
     ),
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
         'License :: OSI Approved :: MIT License',
+        "Operating System :: OS Independent",
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: Implementation :: CPython',
         'Programming Language :: Python :: Implementation :: PyPy',
+        "Topic :: Software Development :: Libraries"
     ],
     test_suite='tests',
     project_urls={
@@ -67,8 +68,13 @@ setup(
     },
     install_requires=[
         'boto3',
+        'botocore',
         'schematics',
-        'botocore'
+        'arrow',
+        'validators',
+        'voluptuous',
+        'inflection',
+        'bloop'
     ]
 )
 

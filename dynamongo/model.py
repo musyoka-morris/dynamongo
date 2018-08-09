@@ -2,6 +2,7 @@ import logging
 import copy
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from inflection import tableize
 
 from .utils import is_empty, merge_deep, non_empty_values
 from .connection import Connection
@@ -9,6 +10,9 @@ from .fields import Field
 from .exceptions import *
 from .conditions import *
 from .updates import Update, UpdateBuilder, SetUpdate
+from .utils import is_subclass
+
+from .attributes import Dict, Attribute
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +25,30 @@ STRICT_RANGE = 2
 STRICT_BOTH = 3
 
 
-class Model:
+class _HasAttributes:
+    @classmethod
+    def get_attributes(cls):
+        attributes = {}
+        for key, attribute in cls.__dict__.items():
+            if isinstance(attribute, Attribute):
+                attributes[key] = attribute
+            elif is_subclass(attribute, DictAttribute):
+                attributes[key] = attribute.create()
+        return attributes
+
+
+class DictAttribute(_HasAttributes):
+    __extra__ = Dict.EXTRA_ALLOW
+
+    def __init__(self):
+        raise RuntimeError('{} class can not be instantiated'.format(self.__name__))
+
+    @classmethod
+    def create(cls):
+        return Dict(cls.get_attributes(), extra=cls.__extra__)
+
+
+class Model(_HasAttributes):
     """
     Base model class with which to define custom models.
 
@@ -77,7 +104,7 @@ class Model:
     for more information about provisioned throughput Capacity for Reads and Writes
     """
 
-    __table__ = None  # required
+    __table__ = None
     __hash_key__ = None  # required
     __range_key__ = None  # optional
 
@@ -146,7 +173,7 @@ class Model:
     @classmethod
     def _is_key_expression(cls, e):
         """Determine if an expression represents a key attribute."""
-        return isinstance(e, PrimitiveCondition) and e.field.name in cls._primary_keys()
+        return isinstance(e, PrimitiveCondition) and e.attr.name in cls._primary_keys()
 
     @classmethod
     def _extract_key_conditions(cls, expression, strict_level=None, all_required=False):
@@ -204,7 +231,7 @@ class Model:
                     )
 
         # Ensure keys are not repeated
-        field_names = [e.field.name for e in expressions]
+        field_names = [e.attr.name for e in expressions]
         if len(set(field_names)) != size:
             raise ExpressionError("Cannot repeat keys in the same expression", expression)
 
@@ -229,7 +256,7 @@ class Model:
             e = expressions[0]
 
             # range_key cant be used without hash_key
-            if e.field.name == range_key:
+            if e.attr.name == range_key:
                 raise ExpressionError(
                     "range_key ({}) expression can't be used without hash_key ({}) expression"
                         .format(range_key, hash_key),
@@ -255,7 +282,7 @@ class Model:
         conditions = cls._extract_key_conditions(expression, strict_level=STRICT_BOTH, all_required=True)
 
         # Convert to DynamoDB values.
-        return {e.field.name: e.field.to_primitive(e.value) for e in conditions}
+        return {e.attr.name: e.attr.to_primitive(e.value) for e in conditions}
 
     @classmethod
     def _extract_key_cond(cls, expression, strict_level=None, all_required=False):
@@ -492,7 +519,7 @@ class Model:
                 # Otherwise use SCAN
                 hash_key = cls.__hash_key__
                 range_key = cls.__range_key__
-                if isinstance(expression, PrimitiveCondition) and expression.field.name == hash_key and not range_key:
+                if isinstance(expression, PrimitiveCondition) and expression.attr.name == hash_key and not range_key:
                     # This qualifies for a batch request. BATCH
                     items = expression.value
                 elif isinstance(expression, BaseCondition):
@@ -617,7 +644,7 @@ class Model:
         if isinstance(strategy, PrimitiveCondition):
             hash_key = cls.__hash_key__
             range_key = cls.__range_key__
-            if strategy.op == OP.IS_IN and not range_key and strategy.field.name == hash_key:
+            if strategy.op == OP.IS_IN and not range_key and strategy.attr.name == hash_key:
                 raw_items = strategy.value
             else:
                 expression = strategy

@@ -5,16 +5,6 @@ import os
 __all__ = ['Connection']
 
 
-def _env_config():
-    """Read config from the env"""
-    return {
-        'aws_access_key_id': os.environ.get('AWS_ACCESS_KEY_ID'),
-        'aws_secret_access_key': os.environ.get('AWS_SECRET_ACCESS_KEY'),
-        'region_name': os.environ.get('AWS_REGION_NAME', 'us-east-2'),
-        'table_prefix': os.environ.get('AWS_TABLE_PREFIX')
-    }
-
-
 class Connection(object):
     """Borg that handles access to DynamoDB.
 
@@ -31,13 +21,7 @@ class Connection(object):
         - ``AWS_REGION_NAME``
         - ``AWS_TABLE_PREFIX``
     """
-    _connection = None
-    _client = None
-    _table_cache = {}
-    _config = None
-
-    @classmethod
-    def set_config(cls, access_key_id=None, secret_access_key=None, region=None, table_prefix=None):
+    def __init__(self, access_key_id=None, secret_access_key=None, region=None, table_prefix=None):
         """Set configuration.
 
         This is needed only once, globally, per-thread.
@@ -49,63 +33,56 @@ class Connection(object):
         :param region: AWS region name
         :param table_prefix: The global table namespace to be used for all tables
         """
-        config = dict(
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-            region_name=region,
-            table_prefix=table_prefix
+        self.access_key_id = access_key_id
+        self.secret_access_key = secret_access_key
+        self.region = region
+        self.table_prefix = table_prefix if table_prefix else ''
+
+        self._resource = None
+        self._client = None
+        self._table_cache = {}
+
+    @classmethod
+    def from_env(cls):
+        """Read config from the env"""
+        return cls(
+            access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+            secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+            region=os.environ.get('AWS_REGION_NAME', 'us-east-2'),
+            table_prefix=os.environ.get('AWS_TABLE_PREFIX')
         )
 
-        config = {k: v for k, v in config.items() if v is not None}
-        old = cls.config()
-        cls._config = {**old, **config}
-
-    @classmethod
-    def config(cls):
-        """
-        Get config
-
-        Config can either be set by a call to :py:meth:`~Connection.set_config`
-        or environment variables
-        """
-        if cls._config is None:
-            cls._config = dict(**_env_config())
-        return cls._config
-
-    @classmethod
-    def _config_to_kwargs(cls):
+    def _boto3_kwargs(self):
         """Helper method to get all config variables except table prefix"""
-        return {k: v for k, v in cls.config().items() if k != 'table_prefix'}
+        return dict(
+            aws_access_key_id=self.access_key_id,
+            aws_secret_access_key=self.secret_access_key,
+            region_name=self.region,
+        )
 
-    @classmethod
-    def client(cls):
+    def client(self):
         """Return the DynamoDB client"""
-        if cls._client is None:
-            cls._client = boto3.client(
+        if self._client is None:
+            self._client = boto3.client(
                 'dynamodb',
-                **cls._config_to_kwargs()
+                **self._boto3_kwargs()
             )
-        return cls._client
+        return self._client
 
-    @classmethod
-    def resource(cls):
-        """Return the DynamoDB connection"""
-        if cls._connection is None:
-            cls._connection = boto3.resource(
+    def resource(self):
+        """Return DynamoDB Resource"""
+        if self._resource is None:
+            self._resource = boto3.resource(
                 'dynamodb',
-                **cls._config_to_kwargs()
+                **self._boto3_kwargs()
             )
-        return cls._connection
+        return self._resource
 
-    @classmethod
-    def get_table(cls, name):
+    def get_table(self, name):
         """Return DynamoDB Table object"""
-        if name not in cls._table_cache:
-            cls._table_cache[name] = cls.resource().Table(name)
-        return cls._table_cache[name]
+        if name not in self._table_cache:
+            self._table_cache[name] = self.resource().Table(name)
+        return self._table_cache[name]
 
-    @classmethod
-    def table_prefix(cls):
-        """Return the ``table_prefix``"""
-        prefix = cls.config()['table_prefix']
-        return '' if prefix is None else prefix
+    def prefixed_table_name(self, name):
+        return "{}{}".format(self.table_prefix, name)
