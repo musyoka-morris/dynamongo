@@ -455,7 +455,7 @@ class Model(_HasAttributes):
         return keys, condition
 
     @classmethod
-    def get_one(cls, strategy):
+    def get_one(cls, strategy, consistentRead=True):
         """Retrieve a single item from DynamoDB according to strategy.
 
         See :ref:`doc_get_one`
@@ -465,7 +465,7 @@ class Model(_HasAttributes):
         cls._schema()  # init schema
 
         keys = cls._parse_one_strategy(strategy, False)
-        response = cls.table().get_item(Key=keys)
+        response = cls.table().get_item(Key=keys, ConsistentRead=consistentRead)
 
         if not response or 'Item' not in response:
             # 'Item not found with keys: {}'.format(keys)
@@ -474,7 +474,7 @@ class Model(_HasAttributes):
         return cls._from_db_dict(response["Item"])
 
     @classmethod
-    def get_many(cls, strategy, descending=False, limit=None):
+    def get_many(cls, strategy, descending=False, limit=None, consistentRead=True):
         """Retrieve a multiple items from DynamoDB according to strategy.
 
         Performs either a BatchGet, Query, or Scan depending on strategy
@@ -543,7 +543,8 @@ class Model(_HasAttributes):
                     RequestItems={
                         table_name: {
                             'Keys': keys
-                        }
+                        },
+                        'ConsistentRead': consistentRead
                     }
                 )
 
